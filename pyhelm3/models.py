@@ -46,6 +46,10 @@ NonEmptyString = constr(min_length = 1)
 Name = constr(pattern = r"^[a-z0-9-]+$")
 
 
+#: Type for a dependency alias or name (which gets populated from alias after installation)
+DependencyAliasOrName = NonEmptyString
+
+
 #: Type for a SemVer version
 SemVerVersion = constr(pattern = r"^v?\d+\.\d+\.\d+(-[a-zA-Z0-9\.\-]+)?(\+[a-zA-Z0-9\.\-]+)?$")
 
@@ -71,7 +75,7 @@ class ChartDependency(BaseModel):
     """
     Model for a chart dependency.
     """
-    name: Name = Field(
+    name: DependencyAliasOrName = Field(
         ...,
         description = "The name of the chart."
     )
@@ -99,7 +103,7 @@ class ChartDependency(BaseModel):
             "Each item can be a string or pair of child/parent sublist items."
         )
     )
-    alias: t.Optional[NonEmptyString] = Field(
+    alias: t.Optional[DependencyAliasOrName] = Field(
         None,
         description = "Alias to be used for the chart."
     )
