@@ -513,6 +513,7 @@ class Command:
         values: t.Optional[t.Dict[str, t.Any]] = None,
         *,
         atomic: bool = False,
+        rollback_on_failure: bool = False,
         cleanup_on_fail: bool = False,
         create_namespace: bool = True,
         description: t.Optional[str] = None,
@@ -546,8 +547,12 @@ class Command:
             # We send the values in on stdin
             "--values", "-",
         ]
-        if atomic:
-            command.append("--atomic")
+        if atomic or rollback_on_failure:
+            helm_binary_version = await self.version()
+            if helm_binary_version.startswith("v4"):
+                command.append("--rollback-on-failure")
+            else:
+                command.append("--atomic")
         if cleanup_on_fail:
             command.append("--cleanup-on-fail")
         if create_namespace:
