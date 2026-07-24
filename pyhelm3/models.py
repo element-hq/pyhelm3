@@ -46,7 +46,8 @@ NonEmptyString = constr(min_length=1)
 Name = constr(pattern=r"^[a-z0-9-]+$")
 
 
-#: Type for a dependency alias or name (which gets populated from alias after installation)
+#: Type for a dependency alias or name
+#: which gets populated from alias after installation
 DependencyAliasOrName = NonEmptyString
 
 
