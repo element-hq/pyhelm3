@@ -9,6 +9,7 @@ from warnings import warn
 
 import semver
 import yaml
+from pydantic import AnyUrl
 
 from .command import Command, SafeLoader
 from .errors import ReleaseNotFoundError
@@ -104,7 +105,7 @@ class Client:
     @contextlib.asynccontextmanager
     async def pull_chart(
         self,
-        chart_ref: t.Union[pathlib.Path, str],
+        chart_ref: t.Union[pathlib.Path, str, AnyUrl],
         *,
         devel: bool = False,
         repo: t.Optional[str] = None,
@@ -177,7 +178,7 @@ class Client:
         sort_reversed: bool = False,
     ) -> t.Iterable[Release]:
         """
-        Returns an iterable of the deployed releases.
+        Returns an iterable of the requested releases as Release objects.
         """
         if self.version >= semver.VersionInfo.parse("4.0.0") and all:
             warn("helm list: Argument --all is deprecated in helm v4, dropping it")
@@ -192,7 +193,7 @@ class Client:
                 name=release["name"],
                 namespace=release["namespace"],
             )
-            for release in await self._command.list(
+            for release in await self.list_release_definitions(
                 all=all,
                 all_namespaces=all_namespaces,
                 include_deployed=include_deployed,
@@ -206,6 +207,48 @@ class Client:
                 sort_by_date=sort_by_date,
                 sort_reversed=sort_reversed,
             )
+        )
+
+    async def list_release_definitions(
+        self,
+        *,
+        all: bool = False,
+        all_namespaces: bool = False,
+        include_deployed: bool = True,
+        include_failed: bool = False,
+        include_pending: bool = False,
+        include_superseded: bool = False,
+        include_uninstalled: bool = False,
+        include_uninstalling: bool = False,
+        max_releases: int = 256,
+        namespace: t.Optional[str] = None,
+        sort_by_date: bool = False,
+        sort_reversed: bool = False,
+    ) -> t.Iterable[t.Dict[str, t.Any]]:
+        """
+        Returns an iterable of dicts of the requested releases ie the json
+        ˙˙˙output from helm list
+        """
+        if self.version >= semver.VersionInfo.parse("4.0.0") and all:
+            warn("helm list: Argument --all is deprecated in helm v4, dropping it")
+            # In helm v3 --all is additive with any other flags,
+            # in v4 any flags take precedence and disable --all
+            all = include_deployed = include_failed = include_pending = (
+                include_superseded
+            ) = include_uninstalled = include_uninstalling = False
+        return await self._command.list(
+            all=all,
+            all_namespaces=all_namespaces,
+            include_deployed=include_deployed,
+            include_failed=include_failed,
+            include_pending=include_pending,
+            include_superseded=include_superseded,
+            include_uninstalled=include_uninstalled,
+            include_uninstalling=include_uninstalling,
+            max_releases=max_releases,
+            namespace=namespace,
+            sort_by_date=sort_by_date,
+            sort_reversed=sort_reversed,
         )
 
     async def get_current_revision(
@@ -231,11 +274,15 @@ class Client:
         description: t.Optional[str] = None,
         dry_run: bool = False,
         force: bool = False,
+        force_replace: bool = False,
+        force_conflicts: bool = False,
         namespace: t.Optional[str] = None,
         no_hooks: bool = False,
         reset_values: bool = False,
         reuse_values: bool = False,
+        server_side: t.Optional[str] = None,
         skip_crds: bool = False,
+        take_ownership: bool = False,
         timeout: t.Union[int, str, None] = None,
         wait: bool = False,
         disable_validation: bool = False,
@@ -244,22 +291,46 @@ class Client:
         Install or upgrade the named release using the given chart and values and return
         the new revision.
         """
-        if self.version >= semver.VersionInfo.parse("4.0.0") and atomic:
-            warn(
-                "helm install|upgrade: Argument --atomic is deprecated in helm v4, "
-                "using --rollback-on-failure instead"
-            )
-        if self.version < semver.VersionInfo.parse("4.0.0") and rollback_on_failure:
-            warn(
-                "helm install|upgrade: Argument --rollback-on-failure is undefined "
-                "in helm v3, using --atomic instead"
-            )
+        if self.version >= semver.VersionInfo.parse("4.0.0"):
+            if atomic:
+                warn(
+                    "helm install|upgrade: Argument --atomic is deprecated in helm v4, "
+                    "using --rollback-on-failure instead"
+                )
+            if force:
+                warn(
+                    "helm install|upgrade: Argument --force is deprecated in helm v4,"
+                    "using --force-replace instead but you may want --force-conflicts"
+                )
+                force = False
+                force_replace = True
+        if self.version < semver.VersionInfo.parse("4.0.0"):
+            if rollback_on_failure:
+                warn(
+                    "helm install|upgrade: Argument --rollback-on-failure is undefined "
+                    "in helm v3, using --atomic instead"
+                )
+            if force_conflicts or force_replace:
+                warn(
+                    "helm install|upgrade: Arguments --force-replace and "
+                    "--force-conflicts are undefined in helm v3, using"
+                    "--force instead"
+                )
+                force_conflicts = force_replace = False
+                force = True
+            if server_side:
+                warn(
+                    "helm install|upgrade: Argument --server-side is undefined"
+                    "in helm v3, dropping it"
+                )
+                server_side = None
         atomic = atomic or rollback_on_failure
         atomic_arg = (
             "--atomic"
             if self.version < semver.VersionInfo.parse("4.0.0")
             else "--rollback-on-failure"
         )
+
         return ReleaseRevision._from_status(
             await self._command.install_or_upgrade(
                 release_name,
@@ -272,12 +343,16 @@ class Client:
                 description=description,
                 dry_run=dry_run,
                 force=force,
+                force_replace=force_replace,
+                force_conflicts=force_conflicts,
                 namespace=namespace,
                 no_hooks=no_hooks,
                 repo=chart.repo,
                 reset_values=reset_values,
                 reuse_values=reuse_values,
+                server_side=server_side,
                 skip_crds=skip_crds,
+                take_ownership=take_ownership,
                 timeout=timeout,
                 version=chart.metadata.version,
                 wait=wait,
@@ -377,6 +452,7 @@ class Client:
         reset_values: bool = False,
         reuse_values: bool = False,
         skip_crds: bool = False,
+        take_ownership: bool = False,
         timeout: t.Union[int, str, None] = None,
         wait: bool = False,
     ) -> ReleaseRevision:
@@ -410,6 +486,7 @@ class Client:
                 reset_values=reset_values,
                 reuse_values=reuse_values,
                 skip_crds=skip_crds,
+                take_ownership=take_ownership,
                 timeout=timeout,
                 wait=wait,
             )

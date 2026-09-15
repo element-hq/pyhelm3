@@ -540,12 +540,16 @@ class Command:
         debug: bool = False,
         dry_run: bool = False,
         force: bool = False,
+        force_replace: bool = False,
+        force_conflicts: bool = False,
         namespace: t.Optional[str] = None,
         no_hooks: bool = False,
         repo: t.Optional[str] = None,
         reset_values: bool = False,
         reuse_values: bool = False,
+        server_side: t.Optional[str] = None,
         skip_crds: bool = False,
+        take_ownership: bool = False,
         timeout: t.Union[int, str, None] = None,
         version: t.Optional[str] = None,
         wait: bool = False,
@@ -586,6 +590,10 @@ class Command:
             command.append("--dry-run")
         if force:
             command.append("--force")
+        if force_replace:
+            command.append("--force-replace")
+        if force_conflicts:
+            command.append("--force-conflicts")
         if namespace:
             command.extend(["--namespace", namespace])
         if no_hooks:
@@ -596,8 +604,12 @@ class Command:
             command.append("--reset-values")
         if reuse_values:
             command.append("--reuse-values")
+        if server_side:
+            command.append(f"--server-side={server_side}")
         if skip_crds:
             command.append("--skip-crds")
+        if take_ownership:
+            command.append("--take-ownership")
         if version:
             command.extend(["--version", version])
         if wait:
@@ -1042,4 +1054,4 @@ class Command:
             shell_formatted_command, capture_output=True, check=True, shell=True
         )
         version_str = proc.stdout.decode().removeprefix("v")
-        return semver.parse_version_info(version_str)
+        return semver.Version.parse(version_str)
